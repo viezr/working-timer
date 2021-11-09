@@ -1,6 +1,6 @@
 # Working timer
+Simple timer to track work time written in Python.  
 ![image](screenshot.png)  
-Simple timer to track work Time.  
 
 
 ## Features
@@ -11,6 +11,6 @@ Simple timer to track work Time.
 - some settings (default project for startup, data file, export file)
 
 ## Notes
-Because of simplicity, data saved in pickle binary file.
-Switching project save previous project time.
+Because of simplicity, data saved in pickle binary file.  
+Switching project save previous project time.  
 By default data exported in format: "project name,date iso,seconds".

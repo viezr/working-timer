@@ -335,7 +335,7 @@ class Timer(tk.Tk):
                 self.set_btn_color(self.config_button, "grey")
             else:
                 for bkey, button in self.del_buttons.items():
-                    if bkey == key:
+                    if bkey == project:
                         self.set_btn_color(button, "red")
                     else:
                         button.configure(state = "disabled")
