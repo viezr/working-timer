@@ -216,6 +216,8 @@ class Timer(tk.Tk):
         self.prj_frame.configure(background = self.main_bg)
         self.radio_buttons = {}
         self.del_buttons = {}
+        self.prj_frame.grid_columnconfigure(1, minsize = 20)
+
 
         # Widgets
         default = self.cur_project.get() # to swith radio to current project
@@ -238,7 +240,7 @@ class Timer(tk.Tk):
             del_button = tk.Button(self.prj_frame, text = "Del",
                 command = self.cfg_del_project(key), width = 4,
                     padx = 0, pady = 0, font = self.main_font)
-            del_button.grid(row = idx, column = 1, sticky = "E")
+            del_button.grid(row = idx, column = 2, sticky = "E")
             self.set_btn_color(del_button, "grey")
             self.del_buttons[key] = del_button
 
