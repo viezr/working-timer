@@ -49,7 +49,7 @@ class Timer(tk.Tk):
         # if default project from config filse exists in base,
         # set it to cur_project esle set first found project
         self.cur_project.set(self.get_default_project())
-        # if cur_project today has time in base,
+        # if current project has time in base for today,
         # insert time into timer_seconds else insert 0
         self.timer_seconds = self.get_cur_project_time()
 
@@ -124,6 +124,27 @@ class Timer(tk.Tk):
             highlightbackground = self.colors["but_hl"]
         )
 
+    def update_details(self) -> None:
+        '''
+        Update list of data in details frame
+        '''
+        if self.details_hidden:
+            return
+        prj = self.cur_project.get()
+        self.listbox.delete(0, tk.END)
+        # Fill listbox with project data
+        for day, sec in self.projects[prj].items():
+           self.listbox.insert("end", f"Day: {day} Sec: {sec} " +
+                f"Time: {format_time(sec)}")
+        # Set listbox to last position
+        lines = len(self.projects[prj])
+        self.listbox.yview_scroll(lines, 'units')
+
+        if "time_label" in self.__dict__:
+            time = sum([sec for day, sec in self.projects[prj].items()]) / 3600
+            self.time_label.configure(
+                text = "Project hours: {:.2f}".format(time))
+
     def details_frame(self) -> None:
         '''
         Show the frame with details about the project.
@@ -132,21 +153,19 @@ class Timer(tk.Tk):
             '''
             Delete selected date.
             '''
-            sel = listbox.curselection()
+            self.clear_del_confirmed()
+            sel = self.listbox.curselection()
             if sel:
-                sel_date = listbox.get(sel[0]).split()[1]
+                sel_date = self.listbox.get(sel[0]).split()[1]
                 rem_date = date.fromisoformat(sel_date)
                 self.projects[prj].pop(rem_date)
                 # Update current seconds if removed today data
                 self.timer_seconds = self.get_cur_project_time()
                 self.timer_label.configure(
                     text = format_time(self.timer_seconds))
-                self.det_frame.destroy()
-                self.details_hidden = True
-                # Close frame
-                self.det_frame.destroy()
-                self.details_hidden = True
+                self.update_details()
 
+        self.clear_del_confirmed()
         if not self.details_hidden:
             self.det_frame.destroy()
             self.details_hidden = True
@@ -159,72 +178,49 @@ class Timer(tk.Tk):
         self.det_frame.configure(background = self.main_bg)
         self.det_frame.grid(row = 2, column = 0, columnspan = 5)
 
-        prj_date = tk.StringVar()
-        prj_date.set(None)
-
         # Widgets
-        listbox = tk.Listbox(self.det_frame, width = 36)
-        listbox.grid(row = 0, column = 0)
-        yscroll = tk.Scrollbar(self.det_frame, command = listbox.yview,
+        self.listbox = tk.Listbox(self.det_frame, width = 36, height = 10)
+        self.listbox.grid(row = 0, column = 0)
+        yscroll = tk.Scrollbar(self.det_frame, command = self.listbox.yview,
             orient = tk.VERTICAL)
         yscroll.grid(row = 0, column = 1, sticky = "NS")
-        listbox.configure(yscrollcommand=yscroll.set)
+        self.listbox.configure(yscrollcommand = yscroll.set)
         # Fill listbox with project data
+        self.update_details()
+
         prj = self.cur_project.get()
-        for day, sec in self.projects[prj].items():
-           listbox.insert("end", f"Day: {day} Sec: {sec} " +
-                f"Time: {format_time(sec)}")
-        # Set listbox to last position
-        lines = len(self.projects[prj])
-        listbox.yview_scroll(lines, 'units')
-
-        buttons_frame = tk.Frame(self.det_frame)
-        buttons_frame.configure(background = self.main_bg)
-        buttons_frame.grid(row = 1, column = 0, columnspan = 2)
-
         time = sum([sec for day, sec in self.projects[prj].items()]) / 3600
-        time_label = tk.Label(buttons_frame,
+        self.time_label = tk.Label(self.det_frame,
             text = "Project hours: {:.2f}".format(time), width = 24,
             padx = 0, pady = 0, bg = self.label_col["bg"],
             fg = self.label_col["fg"], font = self.main_font)
-        time_label.grid(row = 0, column = 1, padx = 4, pady = 8)
+        self.time_label.grid(row = 1, column = 0, columnspan = 2, padx = 4, pady = 8)
 
-        del_button = tk.Button(buttons_frame, text = "Delete selected",
+        del_button = tk.Button(self.det_frame, text = "Delete selected",
             command = del_date, width = 16, padx = 0, pady = 0,
             font = self.main_font)
-        del_button.grid(row = 1, column = 1, padx = 4, pady = 10)
+        del_button.grid(row = 2, column = 0, columnspan = 2, padx = 4, pady = 10)
         self.set_btn_color(del_button, "grey")
 
-    def config_frame(self) -> None:
+    def update_config_projects(self) -> None:
         '''
-        Show config frame.
+        Update project in config frame
         '''
-        if not self.config_hidden:
-            self.cfg_frame.destroy()
-            self.del_confirmed = None
-            self.config_hidden = True
-            self.set_btn_color(self.config_button, "grey")
-            if not self.details_hidden:
-                self.det_frame.destroy()
-                self.details_hidden = True
+        if self.config_hidden:
             return
-        self.config_hidden = False
-        self.set_btn_color(self.config_button, "green")
-        self.cfg_frame = tk.Frame(self)
-        self.cfg_frame.configure(background = self.main_bg)
-        self.cfg_frame.grid(row = 1, column = 0, columnspan = 5)
+        if self.prj_frame:
+            self.prj_frame.destroy()
+
+        self.prj_frame = tk.Frame(self.cfg_frame)
+        self.prj_frame.grid(row = 1, column = 0)
+        self.prj_frame.configure(background = self.main_bg)
+        self.radio_buttons = {}
         self.del_buttons = {}
 
         # Widgets
         default = self.cur_project.get() # to swith radio to current project
-        config_label = tk.Label(self.cfg_frame, text = "Projects", width = 10,
-            padx = 0, pady = 0, bg = self.label_col["bg"], fg = "#fff",
-            font = "roboto, 12")
-        config_label.grid(row = 0, column = 0, columnspan = 5, pady = 4)
-
-        idx = 0 # init idx if no projects
         for idx, key in enumerate(self.projects):
-            radio = tk.Radiobutton(self.cfg_frame, text = key,
+            radio = tk.Radiobutton(self.prj_frame, text = key,
                 variable = self.choice_project,
                 command = self.cfg_switch_project,
                 value = key, borderwidth = 0, relief = "flat",
@@ -234,43 +230,83 @@ class Timer(tk.Tk):
                 activebackground = self.colors["yellow"]["hover"],
                 activeforeground = self.colors["yellow"]["fg"],
                 font = self.main_font)
-            radio.grid(row = idx + 1, column = 0, columnspan = 4, sticky = "W")
+            radio.grid(row = idx, column = 0, sticky = "W")
+            self.radio_buttons[key] = radio
             if key == default:
                 radio.invoke() # swith radio to current project
 
-            del_button = tk.Button(self.cfg_frame, text = "Del",
+            del_button = tk.Button(self.prj_frame, text = "Del",
                 command = self.cfg_del_project(key), width = 4,
                     padx = 0, pady = 0, font = self.main_font)
-            del_button.grid(row = idx + 1, column = 4, sticky = "E")
+            del_button.grid(row = idx, column = 1, sticky = "E")
             self.set_btn_color(del_button, "grey")
             self.del_buttons[key] = del_button
+
+    def config_frame(self) -> None:
+        '''
+        Show config frame.
+        '''
+        if not self.config_hidden:
+            self.cfg_frame.destroy()
+            self.clear_del_confirmed()
+            self.config_hidden = True
+            self.set_btn_color(self.config_button, "grey")
+            if not self.details_hidden:
+                self.details_hidden = True
+            return
+        self.config_hidden = False
+        self.prj_frame = None
+        self.set_btn_color(self.config_button, "green")
+
+        self.cfg_frame = tk.Frame(self)
+        self.cfg_frame.configure(background = self.main_bg)
+        self.cfg_frame.grid(row = 1, column = 0, columnspan = 5)
+
+        # Projects frame
+        self.update_config_projects()
+
+        # Widgets
+        config_label = tk.Label(self.cfg_frame, text = "Projects", width = 10,
+            padx = 0, pady = 0, bg = self.label_col["bg"], fg = "#fff",
+            font = "roboto, 12")
+        config_label.grid(row = 0, column = 0, pady = 4)
 
         new_entry = tk.Entry(self.cfg_frame, textvariable = self.new_project,
             bg = self.label_col["fg"], fg = self.label_col["bg"], width = 26,
             font = self.main_font)
         self.new_project.set("New project")
-        new_entry.grid(row = idx + 2, column = 0, columnspan = 4, pady = 8,
+        new_entry.grid(row = 2, column = 0, pady = 8,
             sticky = "W")
 
         add_button = tk.Button(self.cfg_frame, text = "Add",
             command = self.cfg_add_project, width = 4, padx = 0, pady = 0,
             font = self.main_font)
-        add_button.grid(row = idx + 2, column = 4, sticky = "E")
+        add_button.grid(row = 2, column = 0, sticky = "E")
         self.set_btn_color(add_button, "yellow")
 
         self.details_button = tk.Button(self.cfg_frame, text = "Details",
             command = self.details_frame, width = 8, padx = 0, pady = 0,
             font = self.main_font)
-        self.details_button.grid(row = idx + 3, column = 0, columnspan = 5,
+        self.details_button.grid(row = 3, column = 0,
             pady = 14, sticky = "NW")
         self.set_btn_color(self.details_button, "yellow")
 
         export_button = tk.Button(self.cfg_frame, text = "Export",
             command = self.export_projects, width = 8, padx = 0, pady = 0,
             font = self.main_font)
-        export_button.grid(row = idx + 3, column = 0, columnspan = 5,
+        export_button.grid(row = 3, column = 0,
             pady = 14, sticky = "NE")
         self.set_btn_color(export_button, "yellow")
+
+    def clear_del_confirmed(self) -> None:
+        '''
+        Clear state of delete confirmation and reset buttons color
+        '''
+        if self.del_confirmed:
+            self.del_confirmed = False
+            for bkey, button in self.del_buttons.items():
+                self.set_btn_color(button, "grey")
+                button.configure(state = "active")
 
     def switch_project(self, project: str) -> None:
         '''
@@ -287,6 +323,8 @@ class Timer(tk.Tk):
         self.project_label.configure(text = project)
         self.timer_seconds = self.get_cur_project_time()
         self.timer_label.configure(text = format_time(self.timer_seconds))
+        self.clear_del_confirmed()
+        self.update_details()
 
     def cfg_switch_project(self) -> None:
         '''
@@ -296,9 +334,6 @@ class Timer(tk.Tk):
         if project == self.cur_project.get():
             return
         self.switch_project(project)
-        if not self.details_hidden:
-            self.det_frame.destroy()
-            self.details_hidden = True
 
     def cfg_add_project(self) -> None:
         '''
@@ -309,10 +344,7 @@ class Timer(tk.Tk):
         self.projects[new_prj] = {}
         # Set timer's settings for new project
         self.switch_project(new_prj)
-        # Close config frame
-        self.cfg_frame.destroy()
-        self.config_hidden = True
-        self.set_btn_color(self.config_button, "grey")
+        self.update_config_projects()
 
     def cfg_del_project(self, project: str):
         '''
@@ -328,11 +360,7 @@ class Timer(tk.Tk):
                 self.projects.pop(project)
                 # Set timer's settings for other project
                 self.switch_project(next(iter(self.projects)))
-                # Close config frame
-                self.cfg_frame.destroy()
-                self.config_hidden = True
-                self.del_confirmed = False
-                self.set_btn_color(self.config_button, "grey")
+                self.update_config_projects()
             else:
                 for bkey, button in self.del_buttons.items():
                     if bkey == project:
@@ -346,6 +374,7 @@ class Timer(tk.Tk):
         '''
         Start threads to run or stop the timer.
         '''
+        self.clear_del_confirmed()
         if self.timer_thread:
             Thread(target = stop_timer_thread, args = (self,)).start()
             return
@@ -357,6 +386,7 @@ class Timer(tk.Tk):
         Export all projects to a text file with simple format:
         "project name",date,seconds.
         '''
+        self.clear_del_confirmed()
         with open(Config.EXPORT_FILE, "w") as f:
             data = ""
             for key in app.projects:
