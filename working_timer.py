@@ -7,9 +7,11 @@ from datetime import date
 from os import path
 import pickle
 import tkinter as tk
+from tkinter import filedialog as fd
 from threading import Thread
-from config import Config
 
+
+DB_FILE = "data.pyc"
 
 class Timer(tk.Tk):
     '''
@@ -35,8 +37,9 @@ class Timer(tk.Tk):
         }
         self.configure(background = self.main_bg)
 
-        self.projects = load_projects()
+        self.db = load_db()
         self.cur_project = tk.StringVar() # current project
+        self.default_project = tk.StringVar()
         self.choice_project = tk.StringVar() # choosen project from config frame
         self.new_project = tk.StringVar() # new project from config frame
         self.cur_date = date.today()
@@ -45,8 +48,9 @@ class Timer(tk.Tk):
         self.config_hidden = True # Config frame state
         self.details_hidden = True # Details frame state
         self.del_confirmed = False # trigger for del buttons for double press
-
-        # if default project from config filse exists in base,
+        if self.db["default"]:
+            self.default_project.set(self.db["default"])
+        # if default project exists in base,
         # set it to cur_project esle set first found project
         self.cur_project.set(self.get_default_project())
         # if current project has time in base for today,
@@ -93,12 +97,19 @@ class Timer(tk.Tk):
         Return default project from config file
         if it's in the database.
         '''
-        default = Config.DEFAULT_PROJECT
-        if default in self.projects:
-            return default
-        elif self.projects:
-            first = next(iter(self.projects))
+        if self.default_project.get() in self.db["projects"]:
+            return self.default_project.get()
+        elif self.db["projects"]:
+            first = next(iter(self.db["projects"]))
             return first
+
+    def save_default_project(self) -> str:
+        '''
+        Set default project to the database.
+        '''
+        default = self.default_project.get()
+        if not default.lower() == "none":
+            self.db["default"] = default
 
     def get_cur_project_time(self) -> int:
         '''
@@ -106,8 +117,8 @@ class Timer(tk.Tk):
         if it has today time in the database.
         '''
         prj = self.cur_project.get()
-        if self.projects:
-            for day, val in self.projects[prj].items():
+        if not prj.lower() == "none" and self.db["projects"]:
+            for day, val in self.db["projects"][prj].items():
                 if day == self.cur_date:
                     return val
         return 0
@@ -133,15 +144,15 @@ class Timer(tk.Tk):
         prj = self.cur_project.get()
         self.listbox.delete(0, tk.END)
         # Fill listbox with project data
-        for day, sec in self.projects[prj].items():
+        for day, sec in self.db["projects"][prj].items():
            self.listbox.insert("end", f"Day: {day} Sec: {sec} " +
                 f"Time: {format_time(sec)}")
         # Set listbox to last position
-        lines = len(self.projects[prj])
+        lines = len(self.db["projects"][prj])
         self.listbox.yview_scroll(lines, 'units')
 
         if "time_label" in self.__dict__:
-            time = sum([sec for day, sec in self.projects[prj].items()]) / 3600
+            time = sum([sec for day, sec in self.db["projects"][prj].items()]) / 3600
             self.time_label.configure(
                 text = "Project hours: {:.2f}".format(time))
 
@@ -158,12 +169,15 @@ class Timer(tk.Tk):
             if sel:
                 sel_date = self.listbox.get(sel[0]).split()[1]
                 rem_date = date.fromisoformat(sel_date)
-                self.projects[prj].pop(rem_date)
+                self.db["projects"][prj].pop(rem_date)
                 # Update current seconds if removed today data
                 self.timer_seconds = self.get_cur_project_time()
                 self.timer_label.configure(
                     text = format_time(self.timer_seconds))
                 self.update_details()
+            else:
+                self.flash_status("Date not selected")
+
 
         self.clear_del_confirmed()
         if not self.details_hidden:
@@ -176,7 +190,7 @@ class Timer(tk.Tk):
         self.set_btn_color(self.details_button, "green")
         self.det_frame = tk.Frame(self)
         self.det_frame.configure(background = self.main_bg)
-        self.det_frame.grid(row = 2, column = 0, columnspan = 5)
+        self.det_frame.grid(row = 3, column = 0, columnspan = 5)
 
         # Widgets
         self.listbox = tk.Listbox(self.det_frame, width = 36, height = 10)
@@ -185,16 +199,17 @@ class Timer(tk.Tk):
             orient = tk.VERTICAL)
         yscroll.grid(row = 0, column = 1, sticky = "NS")
         self.listbox.configure(yscrollcommand = yscroll.set)
-        # Fill listbox with project data
-        self.update_details()
 
         prj = self.cur_project.get()
-        time = sum([sec for day, sec in self.projects[prj].items()]) / 3600
+        time = sum([sec for day, sec in self.db["projects"][prj].items()]) / 3600
         self.time_label = tk.Label(self.det_frame,
             text = "Project hours: {:.2f}".format(time), width = 24,
             padx = 0, pady = 0, bg = self.label_col["bg"],
             fg = self.label_col["fg"], font = self.main_font)
         self.time_label.grid(row = 1, column = 0, columnspan = 2, padx = 4, pady = 8)
+
+        # Fill listbox with project data
+        self.update_details()
 
         del_button = tk.Button(self.det_frame, text = "Delete selected",
             command = del_date, width = 16, padx = 0, pady = 0,
@@ -221,28 +236,34 @@ class Timer(tk.Tk):
 
         # Widgets
         default = self.cur_project.get() # to swith radio to current project
-        for idx, key in enumerate(self.projects):
-            radio = tk.Radiobutton(self.prj_frame, text = key,
-                variable = self.choice_project,
-                command = self.cfg_switch_project,
-                value = key, borderwidth = 0, relief = "flat",
-                padx = 0, pady = 0, highlightthickness = 0,
-                bg = self.main_bg, fg = self.label_col["fg"],
-                highlightbackground = self.colors["but_hl"],
-                activebackground = self.colors["yellow"]["hover"],
-                activeforeground = self.colors["yellow"]["fg"],
-                font = self.main_font)
-            radio.grid(row = idx, column = 0, sticky = "W")
-            self.radio_buttons[key] = radio
-            if key == default:
-                radio.invoke() # swith radio to current project
+        if self.db["projects"]:
+            for idx, key in enumerate(self.db["projects"]):
+                radio = tk.Radiobutton(self.prj_frame, text = key,
+                    variable = self.choice_project,
+                    command = self.cfg_switch_project,
+                    value = key, borderwidth = 0, relief = "flat",
+                    padx = 0, pady = 0, highlightthickness = 0,
+                    bg = self.main_bg, fg = self.label_col["fg"],
+                    highlightbackground = self.colors["but_hl"],
+                    activebackground = self.colors["yellow"]["hover"],
+                    activeforeground = self.colors["yellow"]["fg"],
+                    font = self.main_font)
+                radio.grid(row = idx, column = 0, sticky = "W")
+                self.radio_buttons[key] = radio
+                if key == default:
+                    radio.invoke() # swith radio to current project
 
-            del_button = tk.Button(self.prj_frame, text = "Del",
-                command = self.cfg_del_project(key), width = 4,
-                    padx = 0, pady = 0, font = self.main_font)
-            del_button.grid(row = idx, column = 2, sticky = "E")
-            self.set_btn_color(del_button, "grey")
-            self.del_buttons[key] = del_button
+                del_button = tk.Button(self.prj_frame, text = "Del",
+                    command = self.cfg_del_project(key), width = 4,
+                        padx = 0, pady = 0, font = self.main_font)
+                del_button.grid(row = idx, column = 2, sticky = "E")
+                self.set_btn_color(del_button, "grey")
+                self.del_buttons[key] = del_button
+        else:
+            no_prj_label = tk.Label(self.prj_frame, text = "No projects",
+                padx = 0, pady = 0, bg = self.label_col["bg"], fg = "#fff",
+                font = self.main_font)
+            no_prj_label.grid(row = 0, column = 0)
 
     def config_frame(self) -> None:
         '''
@@ -251,6 +272,7 @@ class Timer(tk.Tk):
         if not self.config_hidden:
             self.cfg_frame.destroy()
             self.clear_del_confirmed()
+            self.def_menu_items = []
             self.config_hidden = True
             self.set_btn_color(self.config_button, "grey")
             if not self.details_hidden:
@@ -263,9 +285,8 @@ class Timer(tk.Tk):
         self.cfg_frame = tk.Frame(self)
         self.cfg_frame.configure(background = self.main_bg)
         self.cfg_frame.grid(row = 1, column = 0, columnspan = 5)
+        self.cfg_frame.grid_columnconfigure(1, minsize = 30) # spacer
 
-        # Projects frame
-        self.update_config_projects()
 
         # Widgets
         config_label = tk.Label(self.cfg_frame, text = "Projects", width = 10,
@@ -277,8 +298,7 @@ class Timer(tk.Tk):
             bg = self.label_col["fg"], fg = self.label_col["bg"], width = 26,
             font = self.main_font)
         self.new_project.set("New project")
-        new_entry.grid(row = 2, column = 0, pady = 8,
-            sticky = "W")
+        new_entry.grid(row = 2, column = 0, pady = 8, sticky = "W")
 
         add_button = tk.Button(self.cfg_frame, text = "Add",
             command = self.cfg_add_project, width = 4, padx = 0, pady = 0,
@@ -286,19 +306,56 @@ class Timer(tk.Tk):
         add_button.grid(row = 2, column = 0, sticky = "E")
         self.set_btn_color(add_button, "yellow")
 
-        self.details_button = tk.Button(self.cfg_frame, text = "Details",
-            command = self.details_frame, width = 8, padx = 0, pady = 0,
+        self.status_label = tk.Label(self.cfg_frame, text = " ", padx = 0,
+            pady = 0, bg = self.label_col["bg"], fg = self.label_col["fg"],
             font = self.main_font)
-        self.details_button.grid(row = 3, column = 0,
-            pady = 14, sticky = "NW")
-        self.set_btn_color(self.details_button, "yellow")
+        self.status_label.grid(row = 3, column = 0, columnspan = 3, pady = 10)
 
-        export_button = tk.Button(self.cfg_frame, text = "Export",
+        self.update_config_projects() # Projects frame (row 1)
+
+        # Buttons frame (row 1)
+        buttons_frame = tk.Frame(self.cfg_frame)
+        buttons_frame.configure(background = self.main_bg)
+        buttons_frame.grid(row = 1, column = 2)
+
+        import_button = tk.Button(buttons_frame, text = "Import",
+            command = self.import_projects, width = 8, padx = 0, pady = 0,
+            font = self.main_font)
+        import_button.grid(row = 0, column = 0, padx = 0, sticky = "E")
+        self.set_btn_color(import_button, "yellow")
+
+        export_button = tk.Button(buttons_frame, text = "Export",
             command = self.export_projects, width = 8, padx = 0, pady = 0,
             font = self.main_font)
-        export_button.grid(row = 3, column = 0,
-            pady = 14, sticky = "NE")
+        export_button.grid(row = 1, column = 0, padx = 0, sticky = "E")
         self.set_btn_color(export_button, "yellow")
+
+        # Default project menu
+        def_menu_btn = tk.Menubutton(buttons_frame, text = "Default",
+            relief = "raised", width = 8, padx = 1, pady = 1, font = self.main_font)
+        self.def_menu = tk.Menu(def_menu_btn, tearoff = 0)
+        self.update_def_menu()
+        def_menu_btn["menu"] = self.def_menu
+        def_menu_btn.grid(row = 2, column = 0, padx = 1, sticky = "E")
+        self.set_btn_color(def_menu_btn, "yellow")
+
+        self.details_button = tk.Button(buttons_frame, text = "Details",
+            command = self.details_frame, width = 8, padx = 0, pady = 0,
+            font = self.main_font)
+        self.details_button.grid(row = 3, column = 0, padx = 0, sticky = "E")
+        self.set_btn_color(self.details_button, "yellow")
+
+    def update_def_menu(self):
+        if "def_menu_items" in self.__dict__ and self.def_menu_items:
+            for item in self.def_menu_items:
+                self.def_menu.delete(item)
+        self.def_menu_items = []
+        for prj in self.db["projects"]:
+            self.def_menu.add_radiobutton(
+                label = prj, variable = self.default_project,
+                value = prj, command=self.save_default_project,
+                font = self.main_font)
+            self.def_menu_items.append(prj)
 
     def clear_del_confirmed(self) -> None:
         '''
@@ -310,6 +367,11 @@ class Timer(tk.Tk):
                 self.set_btn_color(button, "grey")
                 button.configure(state = "active")
 
+    def flash_status(self, text: str) -> None:
+        self.status_label.configure(text = text)
+        self.status_label.after(5000,
+            lambda: self.status_label.configure(text = " "))
+
     def switch_project(self, project: str) -> None:
         '''
         Switch current project. Called from config frame functions
@@ -318,8 +380,8 @@ class Timer(tk.Tk):
         cur_prj = self.cur_project.get()
         sec = self.timer_seconds
         if not cur_prj.lower() == "none" and sec > 0:
-            self.projects[cur_prj][self.cur_date] = sec
-        save_projects(self.projects)
+            self.db["projects"][cur_prj][self.cur_date] = sec
+        save_projects(self.db)
         # Set timer's settings for another project
         self.cur_project.set(project)
         self.project_label.configure(text = project)
@@ -343,10 +405,11 @@ class Timer(tk.Tk):
         Switch current project to new.
         '''
         new_prj = self.new_project.get()
-        self.projects[new_prj] = {}
+        self.db["projects"][new_prj] = {}
         # Set timer's settings for new project
         self.switch_project(new_prj)
         self.update_config_projects()
+        self.update_def_menu()
 
     def cfg_del_project(self, project: str):
         '''
@@ -359,10 +422,12 @@ class Timer(tk.Tk):
             Switch current project to first found in database.
             '''
             if self.del_confirmed:
-                self.projects.pop(project)
+                self.db["projects"].pop(project)
                 # Set timer's settings for other project
-                self.switch_project(next(iter(self.projects)))
+                if self.db["projects"]:
+                    self.switch_project(next(iter(self.db["projects"])))
                 self.update_config_projects()
+                self.update_def_menu()
             else:
                 for bkey, button in self.del_buttons.items():
                     if bkey == project:
@@ -383,19 +448,79 @@ class Timer(tk.Tk):
         self.timer_thread = Thread(target = run_timer_thread, args = (self,))
         self.timer_thread.start()
 
+    def import_projects(self) -> None:
+        '''
+        Import projects from text file with simple format:
+        "project name",date,seconds.
+        '''
+        self.clear_del_confirmed()
+        filename = fd.askopenfilename(
+            title = 'Open a file',
+            filetypes = [("Text files", "*.txt")])
+
+        if not filename:
+            self.flash_status("No file choosen")
+            return
+        with open(filename, "r") as f:
+            data = f.readlines()
+        projects = {}
+        error = None
+        for idx, line in enumerate(data):
+            if not line:
+                continue
+            if not line.count(",") == 2:
+                error = str(f"Import error. Line: {idx} " +
+                    "2 commas for line")
+                break
+            prj, _date, sec = line.split(",")
+            prj = prj.strip()
+            try:
+                _date = date.fromisoformat(_date.strip())
+            except:
+                error = f"Import error. Line: {idx} Wrong date format"
+                break
+            sec = sec.strip()
+            try:
+                sec = int(sec)
+            except:
+                error = f"Import error. Line: {idx}. Wrong seconds format"
+                break
+            if not prj in projects:
+                projects[prj] = {}
+            projects[prj][_date] = int(sec)
+
+        if not error:
+            self.db["projects"] = projects
+            self.flash_status("Import successful")
+            self.cur_project.set(self.get_default_project())
+            self.update_config_projects()
+            self.update_def_menu()
+        else:
+            self.flash_status(error)
+
     def export_projects(self) -> None:
         '''
         Export all projects to a text file with simple format:
         "project name",date,seconds.
         '''
         self.clear_del_confirmed()
-        with open(Config.EXPORT_FILE, "w") as f:
-            data = ""
-            for key in app.projects:
-                for item in self.projects[key].items():
-                    date_, sec = item
-                    data += f"{key},{date_},{sec}\n"
-            f.write(data)
+        types = [("Text files", "*.txt")]
+
+        file = fd.asksaveasfile(mode='w',filetypes = types,
+            initialfile = "export.txt",
+            defaultextension = types)
+        data = ""
+        for key in self.db["projects"]:
+            for item in self.db["projects"][key].items():
+                date_, sec = item
+                data += f"{key},{date_},{sec}\n"
+        if file:
+            try:
+                file.write(data)
+                self.flash_status("Export successful")
+            except:
+                self.flash_status("Write file error")
+            file.close()
 
     def quit_app(self) -> None:
         '''
@@ -407,8 +532,8 @@ class Timer(tk.Tk):
         cur_prj = self.cur_project.get()
         sec = self.timer_seconds
         if not cur_prj.lower() == "none" and sec > 0:
-            self.projects[cur_prj][self.cur_date] = sec
-        save_projects(self.projects)
+            self.db["projects"][cur_prj][self.cur_date] = sec
+        save_projects(self.db)
         # Stop timer thread and close app.
         if self.timer_thread:
             Thread(target = stop_timer_thread, args = (self, True), daemon = True).start()
@@ -452,23 +577,24 @@ def format_time(seconds: int) -> str:
     time_out = time.strftime("%H:%M:%S", time_inst)
     return time_out
 
-def load_projects() -> dict:
+def load_db() -> dict:
     '''
-    Load projects from pickle file and return them.
+    Load database from pickle file and return them.
     '''
-    if not path.exists(Config.DB_FILE):
-        return {}
-    with open(Config.DB_FILE, "rb") as f:
+    if not path.exists(DB_FILE):
+        return {"projects": {}, "default": None}
+    with open(DB_FILE, "rb") as f:
         data = pickle.load(f)
     return data
 
-def save_projects(projects: str) -> None:
+def save_projects(db: str) -> None:
     '''
     Save projects to pickle file.
     '''
-    with open(Config.DB_FILE, "wb") as f:
-        pickle.dump(projects, f, pickle.HIGHEST_PROTOCOL)
+    with open(DB_FILE, "wb") as f:
+        pickle.dump(db, f, pickle.HIGHEST_PROTOCOL)
 
 
 app = Timer()
+app.attributes("-topmost", True)
 app.mainloop()
