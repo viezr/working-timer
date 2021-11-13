@@ -188,9 +188,9 @@ class Timer(tk.Tk):
 
         self.details_hidden = False
         self.set_btn_color(self.details_button, "green")
-        self.det_frame = tk.Frame(self)
+        self.det_frame = tk.Frame(self.cfg_frame)
         self.det_frame.configure(background = self.main_bg)
-        self.det_frame.grid(row = 3, column = 0, columnspan = 5)
+        self.det_frame.grid(row = 4, column = 0, columnspan = 3)
 
         # Widgets
         self.listbox = tk.Listbox(self.det_frame, width = 36, height = 10)
@@ -275,8 +275,7 @@ class Timer(tk.Tk):
             self.def_menu_items = []
             self.config_hidden = True
             self.set_btn_color(self.config_button, "grey")
-            if not self.details_hidden:
-                self.details_hidden = True
+            self.details_hidden = True
             return
         self.config_hidden = False
         self.prj_frame = None
