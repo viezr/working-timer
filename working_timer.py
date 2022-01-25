@@ -103,7 +103,7 @@ class Timer(tk.Tk):
             first = next(iter(self.db["projects"]))
             return first
 
-    def save_default_project(self) -> str:
+    def save_default_project(self) -> None:
         '''
         Set default project to the database.
         '''
@@ -317,17 +317,17 @@ class Timer(tk.Tk):
         buttons_frame.configure(background = self.main_bg)
         buttons_frame.grid(row = 1, column = 2)
 
-        import_button = tk.Button(buttons_frame, text = "Import",
+        self.import_button = tk.Button(buttons_frame, text = "Import",
             command = self.import_projects, width = 8, padx = 0, pady = 0,
             font = self.main_font)
-        import_button.grid(row = 0, column = 0, padx = 0, sticky = "E")
-        self.set_btn_color(import_button, "yellow")
+        self.import_button.grid(row = 0, column = 0, padx = 0, sticky = "E")
+        self.set_btn_color(self.import_button, "yellow")
 
-        export_button = tk.Button(buttons_frame, text = "Export",
+        self.export_button = tk.Button(buttons_frame, text = "Export",
             command = self.export_projects, width = 8, padx = 0, pady = 0,
             font = self.main_font)
-        export_button.grid(row = 1, column = 0, padx = 0, sticky = "E")
-        self.set_btn_color(export_button, "yellow")
+        self.export_button.grid(row = 1, column = 0, padx = 0, sticky = "E")
+        self.set_btn_color(self.export_button, "yellow")
 
         # Default project menu
         def_menu_btn = tk.Menubutton(buttons_frame, text = "Default",
@@ -344,7 +344,7 @@ class Timer(tk.Tk):
         self.details_button.grid(row = 3, column = 0, padx = 0, sticky = "E")
         self.set_btn_color(self.details_button, "yellow")
 
-    def update_def_menu(self):
+    def update_def_menu(self) -> None:
         if "def_menu_items" in self.__dict__ and self.def_menu_items:
             for item in self.def_menu_items:
                 self.def_menu.delete(item)
@@ -373,13 +373,9 @@ class Timer(tk.Tk):
 
     def switch_project(self, project: str) -> None:
         '''
-        Switch current project. Called from config frame functions
+        Switch current project. Called from config switch and delete functions
         '''
         # Save time for current project
-        cur_prj = self.cur_project.get()
-        sec = self.timer_seconds
-        if not cur_prj.lower() == "none" and sec > 0:
-            self.db["projects"][cur_prj][self.cur_date] = sec
         save_projects(self.db)
         # Set timer's settings for another project
         self.cur_project.set(project)
@@ -393,6 +389,9 @@ class Timer(tk.Tk):
         '''
         Switch current project in config frame
         '''
+        if self.timer_thread:
+            self.flash_status("Not allowed while timer is on")
+            return
         project = self.choice_project.get()
         if project == self.cur_project.get():
             return
@@ -403,10 +402,11 @@ class Timer(tk.Tk):
         Add new project from config frame.
         Switch current project to new.
         '''
+        if self.timer_thread:
+            self.flash_status("Not allowed while timer is on")
+            return
         new_prj = self.new_project.get()
         self.db["projects"][new_prj] = {}
-        # Set timer's settings for new project
-        self.switch_project(new_prj)
         self.update_config_projects()
         self.update_def_menu()
 
@@ -420,6 +420,9 @@ class Timer(tk.Tk):
             Delete project from config frame.
             Switch current project to first found in database.
             '''
+            if self.timer_thread:
+                self.flash_status("Not allowed while timer is on")
+                return
             if self.del_confirmed:
                 self.db["projects"].pop(project)
                 # Set timer's settings for other project
@@ -444,6 +447,7 @@ class Timer(tk.Tk):
         if self.timer_thread:
             Thread(target = stop_timer_thread, args = (self,)).start()
             return
+
         self.timer_thread = Thread(target = run_timer_thread, args = (self,))
         self.timer_thread.start()
 
@@ -452,6 +456,9 @@ class Timer(tk.Tk):
         Import projects from text file with simple format:
         "project name",date,seconds.
         '''
+        if self.timer_thread:
+            self.flash_status("Not allowed while timer is on")
+            return
         self.clear_del_confirmed()
         filename = fd.askopenfilename(
             title = 'Open a file',
@@ -492,8 +499,9 @@ class Timer(tk.Tk):
             self.db["projects"] = projects
             self.flash_status("Import successful")
             self.cur_project.set(self.get_default_project())
-            self.update_config_projects()
+            self.update_details()
             self.update_def_menu()
+            self.update_config_projects()
         else:
             self.flash_status(error)
 
@@ -502,6 +510,9 @@ class Timer(tk.Tk):
         Export all projects to a text file with simple format:
         "project name",date,seconds.
         '''
+        if self.timer_thread:
+            self.flash_status("Not allowed while timer is on")
+            return
         self.clear_del_confirmed()
         types = [("Text files", "*.txt")]
 
@@ -523,21 +534,12 @@ class Timer(tk.Tk):
 
     def quit_app(self) -> None:
         '''
-        Quit the app and save the database.
-        If timer is running, start daemon thread to stop the timer.
+        Start daemon thread to stop a timer and quit the app.
         Thread daemon option set for forcing it to shutdown
         then the app is closing.
         '''
-        cur_prj = self.cur_project.get()
-        sec = self.timer_seconds
-        if not cur_prj.lower() == "none" and sec > 0:
-            self.db["projects"][cur_prj][self.cur_date] = sec
-        save_projects(self.db)
         # Stop timer thread and close app.
-        if self.timer_thread:
-            Thread(target = stop_timer_thread, args = (self, True), daemon = True).start()
-        else:
-            self.destroy()
+        Thread(target = stop_timer_thread, args = (self, True), daemon = True).start()
 
 def run_timer_thread(app) -> None:
     '''
@@ -549,6 +551,9 @@ def run_timer_thread(app) -> None:
 
     while not app.stop_timer:
         app.timer_label.configure(text = format_time(app.timer_seconds))
+        cur_prj = app.cur_project.get()
+        if not cur_prj.lower() == "none" and app.timer_seconds > 0:
+            app.db["projects"][cur_prj][app.cur_date] = app.timer_seconds
         time.sleep(1)
         app.timer_seconds += 1
     app.stop_timer = False
@@ -558,11 +563,19 @@ def run_timer_thread(app) -> None:
 
 def stop_timer_thread(app, quit = False) -> None:
     '''
-    Thread for stopping the timer, and quit the app
-    if called from quit_app function.
+    Thread for stopping the timer, save database
+    and quit the app if called from quit_app function.
     '''
-    app.stop_timer = True
-    app.timer_thread.join(2)
+    if app.timer_thread:
+        app.stop_timer = True
+        app.timer_thread.join(2)
+
+    cur_prj = app.cur_project.get()
+    sec = app.timer_seconds
+    if not cur_prj.lower() == "none" and sec > 0:
+        app.db["projects"][cur_prj][app.cur_date] = sec
+    save_projects(app.db)
+
     if quit:
         app.destroy()
 
@@ -578,7 +591,7 @@ def format_time(seconds: int) -> str:
 
 def load_db() -> dict:
     '''
-    Load database from pickle file and return them.
+    Load database from pickle file and return it.
     '''
     if not path.exists(DB_FILE):
         return {"projects": {}, "default": None}
@@ -586,7 +599,7 @@ def load_db() -> dict:
         data = pickle.load(f)
     return data
 
-def save_projects(db: str) -> None:
+def save_projects(db: dict) -> None:
     '''
     Save projects to pickle file.
     '''
